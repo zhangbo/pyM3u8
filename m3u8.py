@@ -57,6 +57,7 @@ class M3u8:
         '''
         self.encrypt = False
         self.encryptKey = ""
+        self.saveSuffix = "ts"
         self.headers = {
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.141 Safari/537.36"
         }
@@ -86,7 +87,7 @@ class M3u8:
         container = list()
         response = self.request(url, None).text.split('\n')
         for ts in response:
-            if '.ts' in ts:
+            if (".%s" % (self.saveSuffix)) in ts:
                 container.append(ts)
             if '#EXT-X-KEY:' in ts:
                 self.encrypt = True
@@ -139,7 +140,7 @@ class M3u8:
             else:
                 file = baseUrl + '/' +file
 
-        debrisName = "{}/{}.ts".format(downPath, sort)
+        debrisName = "{}/{}.{}".format(downPath, sort, self.saveSuffix)
 
         if not os.path.exists(debrisName):
             try:
@@ -181,14 +182,14 @@ class M3u8:
         # assert response.status_code == 200
         return response
 
-    def mergefiles(self, downPath, savePath, saveName, saveSuffix, clearDebris):
+    def mergefiles(self, downPath, savePath, saveName, clearDebris):
         sys = platform.system()
         if sys == "Windows":
-            os.system("copy /b {}/*.ts {}/{}.{}".format(downPath, savePath, saveName, saveSuffix))
+            os.system("copy /b {}/*.ts {}/{}.{}".format(downPath, savePath, saveName, self.saveSuffix))
             if clearDebris:
                 os.system("rmdir /s/q {}".format(downPath))
         else:
-            os.system("cat {}/*.ts>{}/{}.{}".format(downPath, savePath, saveName, saveSuffix))
+            os.system("cat {}/*.{}>{}/{}.{}".format(downPath, self.saveSuffix, savePath, saveName, self.saveSuffix))
             if clearDebris:
                 os.system("rm -rf {}".format(downPath))
 
@@ -199,7 +200,7 @@ class M3u8:
         downPath = str(input("碎片的保存路径, 默认./Download：")) or "./Download"
         savePath = str(input("视频的保存路径, 默认./Complete：")) or "./Complete"
         clearDebris = bool(input("是否清除碎片, 默认False：")) or False
-        saveSuffix = str(input("视频格式, 默认ts：")) or "ts"
+        self.saveSuffix = str(input("视频格式, 默认ts：")) or "ts"
 
         while True:
             url = str(input("请输入合法的m3u8链接："))
@@ -233,7 +234,7 @@ class M3u8:
             self.encryptKey = self.getEncryptKey(baseUrl)
         for file in container:
             sort = str(size).zfill(5)
-            debrisName = "{}/{}.ts".format(downPath, sort)
+            debrisName = "{}/{}.{}".format(downPath, sort, self.saveSuffix)
             if not os.path.exists(debrisName):
                 po.apply_async(self.download, args=(queue, sort, file, downPath, url, failed,))
                 targets.append(debrisName)
@@ -250,7 +251,7 @@ class M3u8:
         saveName = time.strftime("%Y%m%d_%H%M%S", time.localtime())
 
         print('---文件合并清除...')
-        self.mergefiles(downPath, savePath, saveName, saveSuffix, clearDebris)
+        self.mergefiles(downPath, savePath, saveName, clearDebris)
         print('---合并清除完成...')
         print('---任务下载完成...')
 
