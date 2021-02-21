@@ -58,6 +58,7 @@ class M3u8:
         self.encrypt = False
         self.encryptKey = ""
         self.saveSuffix = "ts"
+        self.parseSegment = "ts"
         self.headers = {
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.141 Safari/537.36"
         }
@@ -87,7 +88,7 @@ class M3u8:
         container = list()
         response = self.request(url, None).text.split('\n')
         for ts in response:
-            if (".%s" % (self.saveSuffix)) in ts:
+            if (".%s" % (self.parseSegment)) in ts:
                 container.append(ts)
             if '#EXT-X-KEY:' in ts:
                 self.encrypt = True
@@ -141,22 +142,36 @@ class M3u8:
                 file = baseUrl + '/' +file
 
         debrisName = "{}/{}.{}".format(downPath, sort, self.saveSuffix)
-
+        offset = 0
         if not os.path.exists(debrisName):
             try:
                 response = self.request(file, None)
+                offset = self.skipPNGLength(response.content)
             except (RetryError, requests.exceptions.RequestException) as e:
                 failed.append(queue.get(file))
                 return
             with open(debrisName, "wb") as f:
                 if self.encrypt:
                     data = self.aesDecode(response.content, self.encryptKey)
-                    f.write(data)
+                    f.write(data[offset:])
                     f.flush()
                 else:
-                    f.write(response.content)
+                    tmpBytes = response.content
+                    f.write(tmpBytes[offset:])
                     f.flush()
         queue.get(file)
+
+    def skipPNGLength(self, data: bytes) -> int:
+        pngHeaderPattern = b'\x89\x50\x4E\x47\x0D\x0A\x1A\x0A'
+        pngEndPattern = b'\x00\x00\x00\x00\x49\x45\x4E\x44\xAE\x42\x60\x82'
+        if data[:8] != pngHeaderPattern:
+            return 0
+        offset = 8
+        while offset < len(data) - 12:
+            if data[offset:offset + len(pngEndPattern)] == pngEndPattern:
+                return offset + len(pngEndPattern)
+            offset += 1
+        return offset
 
     def progressBar(self, targets, failed):
         total = len(targets)
@@ -200,7 +215,8 @@ class M3u8:
         downPath = str(input("碎片的保存路径, 默认./Download：")) or "./Download"
         savePath = str(input("视频的保存路径, 默认./Complete：")) or "./Complete"
         clearDebris = bool(input("是否清除碎片, 默认False：")) or False
-        self.saveSuffix = str(input("视频格式, 默认ts：")) or "ts"
+        self.parseSegment = str(input("url解析关键字, 默认ts：")) or "ts"
+        self.saveSuffix = str(input("保存片段格式, 默认ts：")) or "ts"
 
         while True:
             url = str(input("请输入合法的m3u8链接："))
