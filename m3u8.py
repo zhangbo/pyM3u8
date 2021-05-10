@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # encoding: utf-8
 import requests, sys, os, platform, time
+import re
 from Crypto.Cipher import AES
 import multiprocessing
 from retrying import retry
@@ -59,6 +60,7 @@ class M3u8:
         self.encryptKey = ""
         self.saveSuffix = "ts"
         self.parseSegment = "ts"
+        self.attributePattern = re.compile(r'''((?:[^,"']|"[^"]*"|'[^']*')+)''')
         self.headers = {
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.141 Safari/537.36"
         }
@@ -89,18 +91,35 @@ class M3u8:
         response = self.request(url, None).text.split('\n')
         for ts in response:
             if (".%s" % (self.parseSegment)) in ts:
+                if self.containsSegment(container, ts):
+                    continue
                 container.append(ts)
             if '#EXT-X-KEY:' in ts:
                 self.encrypt = True
+                container.append(ts)
         return container
 
-    def getEncryptKey(self, url):
+    def containsSegment(self, lst: [], url) -> bool:
+        if lst == None or len(lst) == 0:
+            return False
+        return url in lst
+
+    def getEncryptKey(self, url, line):
         '''
         Access to the secret key
         :param url: string, Access to the secret key by the url
         :return: string
         '''
-        encryptKey = self.request("{}/key.key".format(url), None).content
+        params = self.attributePattern.split(line.replace('#EXT-X-KEY:', ''))[1::2]
+        keyStr = ''
+        for param in params:
+            name, value = param.split('=', 1)
+            if name == "URI":
+                quotes = ('"', "'")
+                if value.startswith(quotes) and value.endswith(quotes):
+                    keyStr = value[1:-1]
+        finalUrl = keyStr if keyStr.startswith("http") else "{}{}".format(url, keyStr)
+        encryptKey = self.request(finalUrl, None).content
         return encryptKey
 
     def aesDecode(self, data, key):
@@ -146,20 +165,25 @@ class M3u8:
         if not os.path.exists(debrisName):
             try:
                 response = self.request(file, None)
-                offset = self.skipPNGLength(response.content)
+                data = response.content
+                if self.encrypt:
+                    data = self.aesDecode(response.content, self.encryptKey)
+                offset = self.skipPNGLength(data)
+                if offset == 0:
+                    offset = self.skipBMPLength(data)
             except (RetryError, requests.exceptions.RequestException) as e:
                 failed.append(queue.get(file))
                 return
             with open(debrisName, "wb") as f:
-                if self.encrypt:
-                    data = self.aesDecode(response.content, self.encryptKey)
-                    f.write(data[offset:])
-                    f.flush()
-                else:
-                    tmpBytes = response.content
-                    f.write(tmpBytes[offset:])
-                    f.flush()
+                f.write(data[offset:])
+                f.flush()
         queue.get(file)
+
+    def skipBMPLength(sekf, data: bytes) -> int:
+        bmpHeaderStart = b'\x42\x4d'
+        if data[:2] != bmpHeaderStart:
+            return 0
+        return int.from_bytes(data[10:14], byteorder='little', signed=False)
 
     def skipPNGLength(self, data: bytes) -> int:
         pngHeaderPattern = b'\x89\x50\x4E\x47\x0D\x0A\x1A\x0A'
@@ -244,10 +268,7 @@ class M3u8:
         size = 0
         if self.encrypt:
             baseUrl = '/'.join(url.split("/")[:3])
-            file = container[0]
-            baseUrl += file
-            baseUrl = '/'.join(baseUrl.split("/")[:-1])
-            self.encryptKey = self.getEncryptKey(baseUrl)
+            self.encryptKey = self.getEncryptKey(baseUrl, container[0])
         for file in container:
             sort = str(size).zfill(5)
             debrisName = "{}/{}.{}".format(downPath, sort, self.saveSuffix)
