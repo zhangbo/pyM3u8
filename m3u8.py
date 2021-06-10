@@ -7,6 +7,7 @@ import multiprocessing
 from retrying import retry
 from retrying import RetryError
 
+requests.packages.urllib3.disable_warnings()
 
 class Color:
     PURPLE = '\033[95m'
@@ -217,7 +218,7 @@ class M3u8:
 
     @retry(stop_max_attempt_number=5, wait_fixed=2000, retry_on_result=status_code_is_not_success)
     def request(self, url, params):
-        response = requests.get(url, params=params, headers=self.headers, timeout=10)
+        response = requests.get(url, params=params, headers=self.headers, timeout=10, verify=False)
         # assert response.status_code == 200
         return response
 
