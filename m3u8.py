@@ -63,7 +63,8 @@ class M3u8:
         self.parseSegment = "ts"
         self.attributePattern = re.compile(r'''((?:[^,"']|"[^"]*"|'[^']*')+)''')
         self.headers = {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.141 Safari/537.36"
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.107 Safari/537.36",
+            "accept": "*/*"
         }
 
     def formatter(self):
@@ -169,9 +170,11 @@ class M3u8:
                 data = response.content
                 if self.encrypt:
                     data = self.aesDecode(response.content, self.encryptKey)
-                offset = self.skipPNGLength(data)
-                if offset == 0:
-                    offset = self.skipBMPLength(data)
+                finded, offset = self.findTSOffset(data)
+                if not finded:
+                    offset = self.skipPNGLength(data)
+                    if offset == 0:
+                        offset = self.skipBMPLength(data)
             except (RetryError, requests.exceptions.RequestException) as e:
                 failed.append(queue.get(file))
                 return
@@ -186,13 +189,23 @@ class M3u8:
             return 0
         return int.from_bytes(data[10:14], byteorder='little', signed=False)
 
+    def findTSOffset(self, data: bytes) -> (bool, int):
+        tsHeaderPattern = b'\x47\x40\x11\x10\x00\x42\xF0\x25'
+        offset = 0
+        while offset < len(data) - len(tsHeaderPattern):
+            tmpSlice = data[offset:offset + len(tsHeaderPattern)]
+            if tmpSlice[0:3] == tsHeaderPattern[0:3] and tmpSlice[4:len(tsHeaderPattern)] == tsHeaderPattern[4:len(tsHeaderPattern)]:
+                return True, offset
+            offset += 1
+        return False, offset
+
     def skipPNGLength(self, data: bytes) -> int:
         pngHeaderPattern = b'\x89\x50\x4E\x47\x0D\x0A\x1A\x0A'
         pngEndPattern = b'\x00\x00\x00\x00\x49\x45\x4E\x44\xAE\x42\x60\x82'
         if data[:8] != pngHeaderPattern:
             return 0
         offset = 8
-        while offset < len(data) - 12:
+        while offset < len(data) - len(pngEndPattern):
             if data[offset:offset + len(pngEndPattern)] == pngEndPattern:
                 return offset + len(pngEndPattern)
             offset += 1
