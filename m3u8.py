@@ -231,7 +231,10 @@ class M3u8:
 
     @retry(stop_max_attempt_number=5, wait_fixed=2000, retry_on_result=status_code_is_not_success)
     def request(self, url, params):
-        response = requests.get(url, params=params, headers=self.headers, timeout=10, verify=False)
+        if len(self.needProxy) != 0:
+            response = requests.get(url, proxies=self.proxy, params=params, headers=self.headers, timeout=10, verify=False)
+        else:
+            response = requests.get(url, params=params, headers=self.headers, timeout=10, verify=False)
         # assert response.status_code == 200
         return response
 
@@ -255,6 +258,13 @@ class M3u8:
         clearDebris = bool(input("是否清除碎片, 默认False：")) or False
         self.parseSegment = str(input("url解析关键字, 默认ts：")) or "ts"
         self.saveSuffix = str(input("保存片段格式, 默认ts：")) or "ts"
+        self.needProxy = str(input("输入代理，若不需要请回车略过：")) or ""
+        self.proxy = {}
+        if len(self.needProxy) != 0:
+            self.proxy = {
+                'http': self.needProxy,
+                'https': self.needProxy
+            }
 
         while True:
             url = str(input("请输入合法的m3u8链接："))
