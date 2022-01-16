@@ -106,7 +106,7 @@ class M3u8:
             return False
         return url in lst
 
-    def getEncryptKey(self, url, line):
+    def getEncryptKey(self, url, lastSlashUrl, line):
         '''
         Access to the secret key
         :param url: string, Access to the secret key by the url
@@ -120,8 +120,19 @@ class M3u8:
                 quotes = ('"', "'")
                 if value.startswith(quotes) and value.endswith(quotes):
                     keyStr = value[1:-1]
+        url = url if url.endswith("/") else url + '/'
         finalUrl = keyStr if keyStr.startswith("http") else "{}{}".format(url, keyStr)
-        encryptKey = self.request(finalUrl, None).content
+        encryptKey = ""
+        try:
+            encryptKey = self.request(finalUrl, None).content
+        except Exception as e:
+            finalUrl = lastSlashUrl if lastSlashUrl.endswith("/") else lastSlashUrl + '/'
+            finalUrl = "{}{}".format(finalUrl, keyStr)
+            encryptKey = self.request(finalUrl, None).content
+        else:
+            pass
+        finally:
+            pass
         return encryptKey
 
     def aesDecode(self, data, key):
@@ -292,7 +303,8 @@ class M3u8:
         size = 0
         if self.encrypt:
             baseUrl = '/'.join(url.split("/")[:3])
-            self.encryptKey = self.getEncryptKey(baseUrl, container[0])
+            lastSlashUrl = url.rsplit('/', 1)[0]
+            self.encryptKey = self.getEncryptKey(baseUrl, lastSlashUrl, container[0])
         for file in container:
             sort = str(size).zfill(5)
             debrisName = "{}/{}.{}".format(downPath, sort, self.saveSuffix)
